@@ -40,6 +40,7 @@ impl QingjianInputController {
                         h.engine.set_english_mode(false);
                         h.engine.break_chain();
                         h.cancel_prediction();
+                        h.end_translation();
                         h.clear_notice();
                         h.window.hide();
                         h.indicator.update(h.english_mode);
