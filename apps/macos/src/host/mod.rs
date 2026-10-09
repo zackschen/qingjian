@@ -143,6 +143,9 @@ pub struct Host {
     /// 横排时上下键展开成矩阵的开关（配置 `[general] horizontal_grid`，缺省关）。
     pub horizontal_grid: bool,
 
+    /// 所有会话共用的中英状态，与 Caps Lock 独立。
+    pub english_mode: bool,
+
     /// 英文模式是否给英文候选（配置 `[general] english_candidates`）。
     pub english_candidates: bool,
 

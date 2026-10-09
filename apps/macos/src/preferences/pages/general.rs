@@ -136,7 +136,7 @@ impl GeneralPage {
         row_checkbox(layout, &traditional);
         let english = checkbox(
             mtm,
-            "英文模式（Caps Lock）也给候选",
+            "英文模式（单击 Shift 切换）也给候选",
             Setting::EnglishCandidates,
             target,
         );

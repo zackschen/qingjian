@@ -1,18 +1,21 @@
 //! 可打印字符的处理：中英文模式、直输段、表达式与问字模式的分流。
 
-use super::*;
+use super::QingjianInputController;
+use crate::host;
+use crate::imk::TextClient;
+use qingjian_core::QUESTION_PREFIX;
 
 impl QingjianInputController {
-    pub(super) fn handle_text(&self, text: &str, client: TextClient<'_>) -> bool {
+    pub(super) fn handle_text(&self, text: &str, caps_lock: bool, client: TextClient<'_>) -> bool {
         tracing::debug!(%text, "inputText");
         self.note_application(&client);
         let mut composing = host::with(|h| !h.engine.composition().is_empty()).unwrap_or(false);
-        let english = modifiers::caps_lock_on();
+        let english = host::with(|h| h.english_mode).unwrap_or(false);
         // 终端、编辑器这类应用（`[apps] english_candidates_off`）里英文模式是纯直通
         let english_candidates = english
             && host::with(|h| h.english_candidates_in(client.bundle_identifier().as_deref()))
                 .unwrap_or(false);
-        // 英文模式组词中 Caps Lock 灭了（或开关关了）：敲的字母先原样上屏，别把它们当拼音
+        // 英文候选关闭或当前应用禁用英文候选：敲的字母先原样上屏，别把它们当拼音
         if composing
             && !english_candidates
             && host::with(|h| h.engine.english_mode()).unwrap_or(false)
@@ -32,7 +35,14 @@ impl QingjianInputController {
             return false;
         };
         let c = char::from(*byte);
-        host::with(|h| h.indicator.update());
+        // Caps Lock 只锁定大小写：字母按系统事件原样交给应用，不触发拼音或模式前缀。
+        if caps_lock && c.is_ascii_alphabetic() {
+            if composing {
+                self.commit_raw(client);
+            }
+            host::with(|h| h.engine.note_passthrough(c));
+            return false;
+        }
         // 缓冲区为空时敲 ? 先进问字模式（配置 `[shortcut] question_mark`，缺省关），中英文模式都行：
         // 后面跟字母就是在问字，跟别的键就还原成问号
         if !composing
@@ -51,7 +61,7 @@ impl QingjianInputController {
             return true;
         }
         let question = composing && host::with(|h| h.engine.question_mode()).unwrap_or(false);
-        // 英文模式下问字：Caps Lock 让字母以大写送来，按小写收进问题
+        // 英文模式下问字：Shift 敲的大写按小写收进问题
         let c = if question && english && c.is_ascii_uppercase() {
             c.to_ascii_lowercase()
         } else {
@@ -60,22 +70,11 @@ impl QingjianInputController {
         host::with(|h| h.engine.set_english_mode(english_candidates && !question));
         let (page_previous, page_next) =
             host::with(|h| h.page_keys).unwrap_or(qingjian_platform::DEFAULT_PAGE_KEYS);
-        // Caps Lock 亮着 = 英文模式：不组句、不转标点，字母默认小写、按住 Shift 才大写
+        // 英文模式使用事件本身的大小写，不转换标点。
         if english && !question {
-            // Caps Lock 亮着时 macOS 不管按没按 Shift 送来的都是大写，只能读 Shift 状态：按着才大写
-            let letter = if modifiers::shift_down() {
-                c.to_ascii_uppercase()
-            } else {
-                c.to_ascii_lowercase()
-            };
             if !english_candidates {
                 if composing {
                     self.commit_raw(client);
-                }
-                if c.is_ascii_alphabetic() {
-                    client.insert_text(&letter.to_string());
-                    host::with(|h| h.engine.note_passthrough(letter));
-                    return true;
                 }
                 host::with(|h| h.engine.note_passthrough(c));
                 return false;
@@ -94,7 +93,7 @@ impl QingjianInputController {
             if c.is_ascii_alphabetic()
                 || (composing && (c.is_ascii_digit() || matches!(c, '_' | '\'' | '-')))
             {
-                host::with(|h| h.engine.push(letter));
+                host::with(|h| h.engine.push(c));
                 self.refresh(client);
                 return true;
             }
@@ -157,7 +156,7 @@ impl QingjianInputController {
             if c == ' ' {
                 return true;
             }
-            return self.handle_text(text, client);
+            return self.handle_text(text, caps_lock, client);
         }
         // 按住 Shift 打的大写字母：缺省是临时打英文，先把拼音原样上屏，再把字母交给应用；
         // `[general] shift_letter = "compose"` 时进缓冲区（Core 按小写匹配、原样上屏时还原大写）

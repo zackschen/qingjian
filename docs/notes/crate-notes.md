@@ -229,6 +229,11 @@ P2C 自由生成实验：`--eval-text <集> --eval-generate data/models/hanzhang
 
 IMK 输入法，源码按 `app / host / imk / candidates / menubar / preferences` 分目录。
 
+- 中英状态放在 `Host::english_mode`，所有会话共用，与 Core 的英文候选开关分开；菜单栏与候选窗读取同一状态。
+  `recognizedEvents:` 订阅 key down / up、flags changed 与鼠标按下；`imk/shift_tap.rs` 识别左右 Shift 单击，其他键、修饰键、鼠标与会话切换取消单击。
+  `[shortcut] switch_mode` 的 `shift` 项控制单击切换（缺省开），macOS 暂不实现另外两项；切换前原样上屏组合并取消联想。
+  Caps Lock 字母按事件原样直通，不触发模式前缀或组句；Info.plist 关闭 `TICapsLockLanguageSwitchCapable`，大小写遵循系统。
+
 - 输入法菜单（状态项 + 系统输入源菜单）与偏好设置窗口都是配置文件的前端：只写 `config.toml`，`Host::apply_config` 一条通路热加载，激活期间每秒看一次文件 mtime。
   输入方案（`[general] scheme`）也在这里装配：双拼 / 注音设给引擎，形码额外按 `paths::code_table_path()` 挂码表
   （用户目录 `wubi/wubi86.tsv` 优先，包里 `Resources/wubi/` 兜底；找不到只警告并按拼音跑）。

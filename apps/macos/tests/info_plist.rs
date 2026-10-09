@@ -171,3 +171,14 @@ fn localized_strings(locale: &str) -> (String, String) {
         .unwrap_or_else(|error| panic!("读不到 {}: {error}", path.display()));
     (locale.to_owned(), text)
 }
+
+/// 中英由 Shift 切换，不能再向系统声明 Caps Lock 用于 ABC 输入源切换。
+#[test]
+fn caps_lock_is_reserved_for_letter_case() {
+    assert_eq!(
+        info_plist()
+            .get("TICapsLockLanguageSwitchCapable")
+            .and_then(Value::as_boolean),
+        Some(false)
+    );
+}

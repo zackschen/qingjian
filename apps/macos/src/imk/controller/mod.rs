@@ -3,23 +3,25 @@
 //! 只做两件事：把按键翻译成 Engine 的调用，把 Engine 返回的候选交给候选窗口。
 //! **这里不允许出现排序、词库或翻译逻辑。** 会话状态（候选、高亮、页码）在 [`crate::host::Session`]。
 
+use std::cell::RefCell;
+
 use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{AnyObject, Sel};
-use objc2::{define_class, msg_send, sel};
-use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType, NSMenu};
+use objc2::{DefinedClass, define_class, msg_send, sel};
+use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags, NSMenu};
 use objc2_foundation::NSObjectProtocol;
 use objc2_input_method_kit::{IMKInputController, IMKServer};
-use qingjian_core::{Candidate, QUESTION_PREFIX};
 use qingjian_platform::Modifiers;
 
-use super::{TextClient, catch_panic, modifiers, recover_from_panic, secure_input};
-use crate::candidates::Preedit;
+use super::shift_tap::ShiftTap;
+use super::{TextClient, catch_panic, recover_from_panic, secure_input};
 use crate::host;
 use crate::menubar;
 
 mod command;
 mod commit;
 mod display;
+mod switching;
 mod text;
 mod translate;
 
@@ -30,7 +32,7 @@ define_class!(
     #[unsafe(super(IMKInputController))]
     // 名字要和 Info.plist 的 InputMethodServerControllerClass 一致
     #[name = "QingjianInputController"]
-    #[ivars = ()]
+    #[ivars = RefCell<ShiftTap>]
     pub struct QingjianInputController;
 
     impl QingjianInputController {
@@ -43,8 +45,16 @@ define_class!(
             client: Option<&AnyObject>,
         ) -> Option<Retained<Self>> {
             tracing::info!("新建输入会话");
-            let this = this.set_ivars(());
+            let this = this.set_ivars(RefCell::new(ShiftTap::default()));
             unsafe { msg_send![super(this), initWithServer: server, delegate: delegate, client: client] }
+        }
+
+        /// 修饰键与松键也要交给单击检测；订阅鼠标后自行结束组合，保留点击上屏的行为。
+        #[unsafe(method(recognizedEvents:))]
+        fn recognized_events(&self, _sender: Option<&AnyObject>) -> usize {
+            (NSEventMask::KeyDown | NSEventMask::KeyUp | NSEventMask::FlagsChanged
+                | NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown
+                | NSEventMask::OtherMouseDown).0 as usize
         }
 
         /// 所有按键事件都到这里（IMK 第一层协议）。IMK 按控制器实现了哪一层决定路线，实现了这个方法就不会再分发成
@@ -71,6 +81,7 @@ define_class!(
         /// 应用要求立刻结束本次输入（切换焦点、切换输入法等）。
         #[unsafe(method(commitComposition:))]
         fn commit_composition(&self, client: Option<&AnyObject>) {
+            self.ivars().borrow_mut().reset();
             let client = client.map(TextClient::new);
             let done = catch_panic("commitComposition", || {
                 if let Some(client) = client {
@@ -88,6 +99,7 @@ define_class!(
 
         #[unsafe(method(activateServer:))]
         fn activate_server(&self, sender: Option<&AnyObject>) {
+            self.ivars().borrow_mut().reset();
             tracing::info!("activateServer");
             let done = catch_panic("activateServer", || {
                 // 用户要往 [apps] 里加应用时，从这条日志抄 bundle identifier
@@ -99,7 +111,7 @@ define_class!(
                     h.engine.set_application(bundle);
                     h.refresh_text_replacements();
                     h.reload_config_if_changed();
-                    h.indicator.activate();
+                    h.indicator.activate(h.english_mode);
                     h.watch.start();
                 });
             });
@@ -124,6 +136,7 @@ define_class!(
 
         #[unsafe(method(deactivateServer:))]
         fn deactivate_server(&self, sender: Option<&AnyObject>) {
+            self.ivars().borrow_mut().reset();
             tracing::info!("deactivateServer");
             let client = sender.map(TextClient::new);
             let done = catch_panic("deactivateServer", || {
@@ -193,8 +206,12 @@ impl QingjianInputController {
 
     /// 一个按键事件的分发：只管按下；Cmd / Ctrl 组合除 Cmd+左右外一律交给应用；命令键映射成选择器；其余按字符当文本。
     fn dispatch_event(&self, event: &NSEvent, client: TextClient<'_>) -> bool {
-        if event.r#type() != NSEventType::KeyDown || self.in_login_window() {
+        if self.in_login_window() {
+            self.ivars().borrow_mut().reset();
             return false;
+        }
+        if let Some(handled) = self.handle_switch_event(event, client) {
+            return handled;
         }
         let flags = event.modifierFlags();
         let (command, control, option, shift) = (
@@ -279,7 +296,11 @@ impl QingjianInputController {
             return false;
         }
         match event.characters() {
-            Some(text) if !text.is_empty() => self.handle_text(&text.to_string(), client),
+            Some(text) if !text.is_empty() => self.handle_text(
+                &text.to_string(),
+                flags.contains(NSEventModifierFlags::CapsLock),
+                client,
+            ),
             _ => false,
         }
     }
