@@ -15,6 +15,12 @@ impl ShiftTap {
     pub fn flags_changed(&mut self, key: u16, down: bool, other_modifiers: bool) -> bool {
         let was_down = std::mem::replace(&mut self.down, down);
         let candidate = self.candidate.take();
+        // 部分客户端转发的修饰键事件没有物理键码，按 Shift 标志的变化补齐。
+        let key = if key == 0 && was_down != down {
+            candidate.unwrap_or(56)
+        } else {
+            key
+        };
         // 56 / 60 是 macOS 左右 Shift 的物理键码；是否启用由 shortcut.switch_mode 决定。
         if !matches!(key, 56 | 60) || other_modifiers || !self.held_keys.is_empty() {
             return false;
@@ -28,6 +34,11 @@ impl ShiftTap {
 
     pub fn interrupt(&mut self) {
         self.candidate = None;
+    }
+
+    /// IMK 可能不转发普通键的 keyUp；在修饰键事件处用系统状态清掉已松开的键。
+    pub fn refresh_held_keys(&mut self, mut is_down: impl FnMut(u16) -> bool) {
+        self.held_keys.retain(|key| is_down(*key));
     }
 
     pub fn key_event(&mut self, key: u16, down: bool) {
@@ -109,5 +120,33 @@ mod tests {
         tap.key_event(0, false);
         tap.flags_changed(56, true, false);
         assert!(tap.flags_changed(56, false, false));
+    }
+
+    #[test]
+    fn missing_key_up_does_not_disable_future_shift_taps() {
+        let mut tap = ShiftTap::default();
+        tap.key_event(0, true);
+        // 客户端没有交付 keyUp，但系统状态已确认松开。
+        tap.refresh_held_keys(|_| false);
+        assert!(!tap.flags_changed(56, true, false));
+        assert!(tap.flags_changed(56, false, false));
+    }
+
+    #[test]
+    fn refreshing_keeps_keys_that_are_really_held() {
+        let mut tap = ShiftTap::default();
+        tap.key_event(0, true);
+        tap.refresh_held_keys(|_| true);
+        assert!(!tap.flags_changed(56, true, false));
+        assert!(!tap.flags_changed(56, false, false));
+    }
+
+    #[test]
+    fn synthetic_modifier_events_can_omit_the_key_code() {
+        let mut tap = ShiftTap::default();
+        assert!(!tap.flags_changed(0, true, false));
+        assert!(tap.flags_changed(0, false, false));
+        tap.flags_changed(60, true, false);
+        assert!(tap.flags_changed(0, false, false));
     }
 }

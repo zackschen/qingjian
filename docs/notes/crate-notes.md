@@ -231,6 +231,7 @@ IMK 输入法，源码按 `app / host / imk / candidates / menubar / preferences
 
 - 中英状态放在 `Host::english_mode`，所有会话共用，与 Core 的英文候选开关分开；菜单栏与候选窗读取同一状态。
   `recognizedEvents:` 订阅 key down / up、flags changed 与鼠标按下；`imk/shift_tap.rs` 识别左右 Shift 单击，其他键、修饰键、鼠标与会话切换取消单击。
+  IMK 可能不转发普通键松开事件；处理修饰键前用 `CGEventSourceKeyState` 清掉已松开的键，避免打字后 Shift 永久失效；键码为 0 的事件按 Shift 标志变化识别。
   `[shortcut] switch_mode` 的 `shift` 项控制单击切换（缺省开），macOS 暂不实现另外两项；切换前原样上屏组合并取消联想。
   Caps Lock 字母按事件原样直通，不触发模式前缀或组句；Info.plist 关闭 `TICapsLockLanguageSwitchCapable`，大小写遵循系统。
 
