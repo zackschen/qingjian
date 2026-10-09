@@ -25,8 +25,11 @@ impl ShiftTap {
         if !matches!(key, 56 | 60) || other_modifiers || !self.held_keys.is_empty() {
             return false;
         }
-        if !was_down && down {
-            self.candidate = Some(key);
+        if down {
+            // 同一次按下可能被 IMK 重复转发；保留已有候选，但不能恢复被组合键取消的候选。
+            if !was_down || candidate == Some(key) {
+                self.candidate = Some(key);
+            }
             return false;
         }
         was_down && !down && candidate == Some(key)
@@ -67,6 +70,29 @@ mod tests {
             assert!(tap.flags_changed(key, false, false));
             assert!(!tap.flags_changed(key, false, false));
         }
+    }
+
+    #[test]
+    fn duplicated_modifier_events_toggle_exactly_once() {
+        // 真机日志序列：按下、重复按下、松开、重复松开。
+        for key in [56, 60] {
+            let mut tap = ShiftTap::default();
+            for _ in 0..3 {
+                let toggles =
+                    [true, true, false, false].map(|down| tap.flags_changed(key, down, false));
+                assert_eq!(toggles, [false, false, true, false]);
+            }
+        }
+    }
+
+    #[test]
+    fn duplicate_press_does_not_rearm_an_interrupted_tap() {
+        let mut tap = ShiftTap::default();
+        tap.flags_changed(56, true, false);
+        tap.key_event(0, true);
+        tap.key_event(0, false);
+        assert!(!tap.flags_changed(56, true, false));
+        assert!(!tap.flags_changed(56, false, false));
     }
 
     #[test]
