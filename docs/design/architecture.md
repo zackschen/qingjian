@@ -388,6 +388,14 @@ CC-CEDICT 表（`dict-convert cedict`）保留为备用来源，覆盖面广但�
   所以 postinstall 切到登录用户来调它。两个坑决定了它的结构：刚换过 bundle 的头几秒系统还在重扫新包，这时启用的记录会被顶掉
   （实测装完 3 秒内都这样），所以启用后隔一会儿要再确认一次；TIS 在进程内缓存输入源状态，本进程怎么重列表、跑 run loop
   回读都是旧值，所以回读与切换放在子进程（`--finish-register`）里做。
+  第三个坑（2026-10-11 踩过）：**同 bundle id 的副本不能让 LaunchServices 登记**。调试时直接运行过 `target/Qingjian.app`、
+  pkg 载荷目录或另拷的测试副本，LaunchServices 就会给同一个 id 记下多条路径；之后 TIS 解析 id 可能落到副本（或副本被清理后
+  一并丢掉装好的那条），症状是菜单与地球键里没有「青简」、系统设置里却还列着、选中后立刻退回 ABC，`TISCreateInputSourceList`
+  连未启用的都列不出它，而进程、签名、`com.apple.inputsources` 里的启用记录都正常。两天里几次「青简不见了」都在这类登记变动
+  （副本被运行、`lsregister -u`、系统自行清掉失效记录）之后出现，纯休眠唤醒（10-09、10-10 各两次深睡）没有触发过。
+  对策：`bundle.sh` 每次打包都 `lsregister -u` 自己的产物；不要直接运行构建产物，要试就 `--install`；
+  已经出问题时跑一次 `qingjian-macos --register`（重新登记 + 启用 + 选中）即可恢复，不必重装。
+  排查用 `lsregister -dump | grep -B2 -A6 app.qingjian.inputmethod` 看 id 对应几条路径。
 - IMK 无法通过 `cargo run` 验证：需要打包成 `.app`、装到 `~/Library/Input Methods/`、
   注销或重启输入法进程才会生效。Core 的验证靠 CLI 测试工具和单元测试，不依赖跑起真实输入法。
 - 已知需要单独处理的场景：Secure Input 字段、沙盒应用、Electron 与 Terminal 各自的 marked text 行为。

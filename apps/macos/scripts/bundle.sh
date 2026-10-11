@@ -160,6 +160,14 @@ if [[ -n "${QINGJIAN_SIGN_IDENTITY:-}" ]]; then
 else
   codesign --force --deep --sign - "$APP"
 fi
+# 构建产物与装好的那份同 bundle id。只要有一份副本被直接运行过（调试时常这么干），LaunchServices 就会记下它；
+# 同 id 多条记录时 TIS 可能解析到副本，装好的那份就从输入法菜单与地球键里消失、选中后立刻退回 ABC（2026-10-11 踩过）。
+# 所以每次打包都把产物从 LaunchServices 撤掉；没登记过的路径撤销也无害。
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+unregister_copy() {
+  "$LSREGISTER" -u "$1" >/dev/null 2>&1 || true
+}
+unregister_copy "$APP"
 echo "打包完成: ${APP}（版本 ${VERSION}，构建 ${BUILD_NUMBER}，${ARCH}）"
 
 if [[ "${1:-}" == "--pkg" ]]; then
@@ -170,6 +178,7 @@ if [[ "${1:-}" == "--pkg" ]]; then
   mkdir -p "$PKG_DIR/root" "$PKG_DIR/resources"
   # 不带扩展属性复制，否则载荷里全是 ._ 元数据文件
   ditto --noextattr --norsrc --noacl "$APP" "$PKG_DIR/root/$APP_NAME.app"
+  unregister_copy "$PKG_DIR/root/$APP_NAME.app"
   # 组件描述里关掉 bundle 重定位：否则机器上别处已有同 bundle id 的 .app（比如 ~/Library 下的开发副本）时，
   # 安装器会把新版装到那里而不是 /Library/Input Methods
   pkgbuild --analyze --root "$PKG_DIR/root" "$PKG_DIR/component.plist" >/dev/null
