@@ -5,6 +5,7 @@ pub mod input_source;
 pub mod logging;
 pub mod paths;
 mod settings;
+pub mod wake_registration;
 
 pub use bundle::BundleInfo;
 pub use settings::Settings;

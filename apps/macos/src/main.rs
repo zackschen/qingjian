@@ -37,6 +37,13 @@ fn main() {
         }
         return;
     }
+    if std::env::args().any(|argument| argument == "--refresh-registration") {
+        if let Err(error) = app::input_source::refresh_main_bundle_registration() {
+            eprintln!("输入源登记刷新失败：{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     let _log_guard = app::logging::init();
     // panic 的位置与 backtrace 记进日志（拦截在 imk::catch_panic，这里只记不碰状态）；
     // 后台线程（云联想）的 panic 也经过这里，否则只会打到没人看的 stderr
@@ -73,5 +80,6 @@ fn main() {
         );
         std::process::exit(1);
     };
+    let _wake_registration = app::wake_registration::WakeRegistration::new(mtm);
     NSApplication::sharedApplication(mtm).run();
 }

@@ -56,6 +56,23 @@ pub fn register_main_bundle() -> Result<bool, String> {
     register_and_enable(Path::new(&path), &source_id)
 }
 
+/// 唤醒后的元数据刷新：只重新登记 bundle，不启用被用户关闭的模式，也不选中输入源。
+pub fn refresh_main_bundle_registration() -> Result<(), String> {
+    let path = NSBundle::mainBundle().bundlePath().to_string();
+    if !path.ends_with(".app") {
+        return Err(format!("不是从 .app 里运行的：{path}"));
+    }
+    let url = CFURL::from_file_path(Path::new(&path))
+        .ok_or_else(|| format!("路径无法转成 URL：{path}"))?;
+    // SAFETY: url 在调用期间有效；登记不会调用启用或选择输入源的 API。
+    let status = unsafe { TISRegisterInputSource(CFRetained::as_ptr(&url)) };
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(format!("TISRegisterInputSource 失败（{status}）"))
+    }
+}
+
 /// 要启用的输入源 ID：有输入模式就是第一个可见模式，否则是顶层 `TISInputSourceID`。
 fn enabled_source_id(bundle: &NSBundle) -> String {
     let first_mode = bundle
