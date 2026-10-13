@@ -22,7 +22,7 @@ description: macOS 与 Windows 的安装步骤：系统要求、安装包、首�
 "/Library/Input Methods/Qingjian.app/Contents/MacOS/qingjian-macos" --register
 ```
 
-青简在 Mac 从休眠唤醒后会刷新系统登记，以便继续从菜单栏或地球键切换；当前选择的输入法保持不变。
+青简在运行时每分钟检查一次系统输入法列表，并在 Mac 从休眠唤醒后刷新登记，列表里丢了青简会自动补回；当前选择的输入法保持不变。丢失期间新打开的应用要退出再打开，才能在其中用上青简。
 
 安装后：
 

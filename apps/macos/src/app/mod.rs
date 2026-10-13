@@ -4,6 +4,7 @@ pub mod bundle;
 pub mod input_source;
 pub mod logging;
 pub mod paths;
+pub mod registration_watchdog;
 mod settings;
 pub mod wake_registration;
 

@@ -37,6 +37,17 @@ fn main() {
         }
         return;
     }
+    // 看门狗起的子进程：列表里没有本输入源才补登记，退出码 0 = 本来就在，3 = 补登记过
+    if std::env::args().any(|argument| argument == app::registration_watchdog::ENSURE_FLAG) {
+        match app::input_source::ensure_main_bundle_registered() {
+            Ok(false) => return,
+            Ok(true) => std::process::exit(app::registration_watchdog::EXIT_REPAIRED),
+            Err(error) => {
+                eprintln!("输入源登记检查失败：{error}");
+                std::process::exit(1);
+            }
+        }
+    }
     if std::env::args().any(|argument| argument == "--refresh-registration") {
         if let Err(error) = app::input_source::refresh_main_bundle_registration() {
             eprintln!("输入源登记刷新失败：{error}");
@@ -81,5 +92,6 @@ fn main() {
         std::process::exit(1);
     };
     let _wake_registration = app::wake_registration::WakeRegistration::new(mtm);
+    app::registration_watchdog::spawn();
     NSApplication::sharedApplication(mtm).run();
 }

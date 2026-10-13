@@ -352,7 +352,8 @@ Unix socket 用共享长度前缀与 Frame（当前公共版本 7，与 `PROTOCO
 候选回报绑定连接代次、上下文和服务端帧序号，仅当前聚焦页的有效释义进入 `note_displayed`，不把生成帧算作已展示。
 `[general] preedit` 使用已有 `both` / `inline` / `window`；没有新增 Linux 自绘配置。详见 [linux-fcitx5.md](linux-fcitx5.md)。
 
-macOS 打包副本：`bundle.sh` 打完 `target/Qingjian.app` 与 pkg 载荷后都 `lsregister -u` 撤掉它们的 LaunchServices 登记，
-避免与 `/Library/Input Methods` 里装好的同 id 副本互相顶（顶掉的症状与排查见 architecture.md「输入源注册」）。
+macOS 打包副本：`bundle.sh` 打完 `target/Qingjian.app` 与 pkg 载荷后都 `lsregister -u` 撤掉它们的 LaunchServices 登记，避免与 `/Library/Input Methods` 里装好的同 id 副本互相顶。
+
+macOS 登记看门狗：`app/registration_watchdog.rs` 每 60 秒起子进程 `--ensure-registration`（退出码 3 = 补登记过），只在系统输入源列表里找不到本输入源时调 `TISRegisterInputSource`，不启用也不选中；系统忘掉第三方输入法的症状与排查见 architecture.md「输入源注册」。
 
 macOS 唤醒登记：`app/wake_registration.rs` 监听 `NSWorkspaceDidWakeNotification`，延迟 2 秒在独立子进程执行 `--refresh-registration`；只调用 `TISRegisterInputSource` 刷新 bundle 元数据，不调用启用或选中 API。主线程不等待，观察者由 main 保留到服务退出。

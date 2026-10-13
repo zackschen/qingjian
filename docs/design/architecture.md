@@ -388,13 +388,14 @@ CC-CEDICT 表（`dict-convert cedict`）保留为备用来源，覆盖面广但�
   所以 postinstall 切到登录用户来调它。两个坑决定了它的结构：刚换过 bundle 的头几秒系统还在重扫新包，这时启用的记录会被顶掉
   （实测装完 3 秒内都这样），所以启用后隔一会儿要再确认一次；TIS 在进程内缓存输入源状态，本进程怎么重列表、跑 run loop
   回读都是旧值，所以回读与切换放在子进程（`--finish-register`）里做。
-  第三个坑（2026-10-11 踩过）：**同 bundle id 的副本不能让 LaunchServices 登记**。调试时直接运行过 `target/Qingjian.app`、
-  pkg 载荷目录或另拷的测试副本，LaunchServices 就会给同一个 id 记下多条路径；之后 TIS 解析 id 可能落到副本（或副本被清理后
-  一并丢掉装好的那条），症状是菜单与地球键里没有「青简」、系统设置里却还列着、选中后立刻退回 ABC，`TISCreateInputSourceList`
-  连未启用的都列不出它，而进程、签名、`com.apple.inputsources` 里的启用记录都正常。两天里几次「青简不见了」都在这类登记变动
-  （副本被运行、`lsregister -u`、系统自行清掉失效记录）之后出现，纯休眠唤醒（10-09、10-10 各两次深睡）没有触发过。
-  对策：`bundle.sh` 每次打包都 `lsregister -u` 自己的产物；不要直接运行构建产物，要试就 `--install`；
-  已经出问题时跑一次 `qingjian-macos --register`（重新登记 + 启用 + 选中）即可恢复，不必重装。
+  第三个坑（2026-10-11 起反复踩）：**系统隔一阵会「忘掉」第三方输入法**。症状：输入法菜单与地球键里没有「青简」、系统设置里却还列着，
+  选中后立刻退回 ABC，新启动的应用里只有 ABC；`TISCreateInputSourceList` 连未启用的也列不出它，而进程、签名、`com.apple.inputsources`
+  里的启用记录都正常。10-12 起每 5 分钟采样一次，一天内丢了两次、自己回来过一次，丢失时刻不在休眠唤醒点上，原因不明；
+  同 bundle id 的副本曾被怀疑（LaunchServices 里留着调试副本时确实会互相顶），`bundle.sh` 因此在打包后 `lsregister -u` 产物，但它不是全部原因。
+  **恢复只需重新 `TISRegisterInputSource`**（`qingjian-macos --refresh-registration`），启用记录还在，不必再启用或切换。
+  应用在启动时拿一份输入源列表并缓存，丢失期间启动的应用（Chrome、微信这类）要重启才看得到青简，已经在跑的应用不受影响。
+  对策：`app/registration_watchdog.rs` 在输入法进程里每 60 秒起子进程 `--ensure-registration`，列表里找不到本输入源就补登记
+  （子进程是因为 TIS 在进程内缓存）；唤醒时（`wake_registration.rs`）也无条件刷新一次。仍要避免直接运行构建产物：
   排查用 `lsregister -dump | grep -B2 -A6 app.qingjian.inputmethod` 看 id 对应几条路径。
 - IMK 无法通过 `cargo run` 验证：需要打包成 `.app`、装到 `~/Library/Input Methods/`、
   注销或重启输入法进程才会生效。Core 的验证靠 CLI 测试工具和单元测试，不依赖跑起真实输入法。

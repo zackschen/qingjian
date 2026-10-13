@@ -73,6 +73,19 @@ pub fn refresh_main_bundle_registration() -> Result<(), String> {
     }
 }
 
+/// 看门狗用的检查：系统的输入源列表里找不到本 bundle 的输入源就重新登记，返回是否做了补登记。
+/// 系统会隔一阵「忘掉」第三方输入法（菜单、地球键里没有，选中后立刻退回 ABC，`com.apple.inputsources` 里的启用记录却还在），
+/// 重新 `TISRegisterInputSource` 即可恢复，不用重新启用。必须在新进程里跑，本进程读到的是缓存（见 [`register_and_enable`]）。
+pub fn ensure_main_bundle_registered() -> Result<bool, String> {
+    let bundle = NSBundle::mainBundle();
+    let source_id = enabled_source_id(&bundle);
+    if list_sources(&source_id).is_some_and(|sources| sources.count() > 0) {
+        return Ok(false);
+    }
+    refresh_main_bundle_registration()?;
+    Ok(true)
+}
+
 /// 要启用的输入源 ID：有输入模式就是第一个可见模式，否则是顶层 `TISInputSourceID`。
 fn enabled_source_id(bundle: &NSBundle) -> String {
     let first_mode = bundle
